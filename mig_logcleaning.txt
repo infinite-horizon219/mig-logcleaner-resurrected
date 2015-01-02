@@ -1,0 +1,313 @@
+----------------------------------< M I G >----------------------------------< by no1
+                            |Security Development|
+
+Advanced Logcleaning in the UNIX Environment
+--------------------------------------------
+
+INDEX:
+------
+x01\ Introduction
+x02\ Basic explanation
+x03\ File structures
+x04\ Logging in
+x05\ Logging out
+x06\ Fun stuff
+  a) Handling lastlog
+  b) Adding a new entry
+  c) Removing an entry
+  d) Modifying utmp entries
+  e) Modifying lastlog entries
+x07\ mig-logcleaner.c
+x08\ Conclusion
+
+x01\ Introduction
+-----------------
+In this paper I will explain how to clean logs on a UNIX system.
+This is not another logcleaning tut that shows you how to
+grep your ip out of /var/log/messages file, it's a more low level
+explanation on removing yourself out of files like wtmp, utmp
+and lastlog for programmers.
+
+x02\ Basic explanation
+-----------------------
+Basically every time person logs into a UNIX system, this log on
+is recorded in wtmp/x, utmp/x and lastlog files. Those files are
+not in the same places on all UNIX systems. Linux, BSD and SUN 
+are the 3 OS's that I am going to be using as example in this tut.
+There are many more UNIXes, but location of those log files is 
+more or less the same as in the below examples:
+
+Linux:
+******
+paths can be looked up in /usr/local/paths.h
+ utmp   - /var/run/utmp
+ wtmp           - /var/log/wtmp
+ lastlog  - /var/log/lastlog
+
+BSD:
+****
+paths can be looked up in /usr/include/utmp.h
+ utmp           - /var/run/utmp
+ wtmp           - /var/log/wtmp
+ lastlog        - /var/log/lastlog
+
+SUN:
+****
+paths can be looked up in /usr/include/utmp.h & /usr/include/utmpx.h
+ utmp  - /var/adm/utmp (not always used)
+ wtmp  - /var/adm/wtmp (not always used)
+ utmpx  - /var/adm/utmpx
+ wtmpx  - /var/adm/wtmpx
+ lastlog - /var/adm/lastlog
+
+utmp/utmpx file is used to store info about currently logged in
+users. This info can be viewed with commands like "w" and "who".
+This file is usually cleared at the startup of the machine.
+
+wtmp/wtmpx file is used to store info about all the users that
+ever logged into the system
+
+lastlog file is used to store last login info of all users on the
+system
+
+x03\ File structures
+--------------------
+utmp/utmpx and wtmp/wtmpx files are structured exactly the same way
+and info written to it is of the same nature. lastlog file structure
+is different form the above files.
+
+When person logs into a system, an entry gets written into utmp/x, wtmp/x
+and lastlog files. When person logs out, an exit entry gets written into
+wtmp/x file and an entry in utmp/x gets modified to symbolize that user
+is logged out of the machine. How those entries are structured can be
+looked up in the C include files utmp.h utmpx.h and lastlog.h.  utmp.h file 
+contains the structure "utmp" which is used to make entries in utmp and 
+wtmp files (utmpx.h is for utmpx and wtmpx files) and definition of a 
+structure "lastlog" which is used to make entries in lastlog file:
+
+Linux:
+******
+
+utmp.h
+------
+
+#define UT_LINESIZE     32
+#define UT_NAMESIZE     32
+#define UT_HOSTSIZE     256
+
+struct utmp
+{
+  short int ut_type;            /* Type of login.  */
+  pid_t ut_pid;                 /* Process ID of login process.  */
+  char ut_line[UT_LINESIZE];    /* Devicename.  */
+  char ut_id[4];                /* Inittab ID.  */
+  char ut_user[UT_NAMESIZE];    /* Username.  */
+  char ut_host[UT_HOSTSIZE];    /* Hostname for remote login.  */
+  struct exit_status ut_exit;   /* Exit status of a process marked
+                                   as DEAD_PROCESS.  */
+  long int ut_session;          /* Session ID, used for windowing.  */
+  struct timeval ut_tv;         /* Time entry was made.  */
+  int32_t ut_addr_v6[4];        /* Internet address of remote host.  */
+  char __unused[20];            /* Reserved for future use.  */
+};
+
+struct lastlog
+  {
+    __time_t ll_time;
+    char ll_line[UT_LINESIZE];
+    char ll_host[UT_HOSTSIZE];
+  };
+
+struct exit_status
+  {
+    short int e_termination;    /* Process termination status.  */
+    short int e_exit;           /* Process exit status.  */
+  };
+
+#define USER_PROCESS    7       /* Normal process.  */
+#define DEAD_PROCESS    8       /* Terminated process.  */
+
+BSD:
+****
+
+utmp.h
+------
+
+#define UT_NAMESIZE     32 (obsd) 16 (fbsd)
+#define UT_LINESIZE     8
+#define UT_HOSTSIZE     256 (obsd) 16 (fbsd)
+
+struct utmp {
+        char    ut_line[UT_LINESIZE];
+        char    ut_name[UT_NAMESIZE];
+        char    ut_host[UT_HOSTSIZE];
+        time_t  ut_time;
+};
+
+struct lastlog {
+        time_t  ll_time;
+        char    ll_line[UT_LINESIZE];
+        char    ll_host[UT_HOSTSIZE];
+};
+
+SUN: 
+****
+
+utmp.h
+------
+
+struct utmp {
+        char ut_user[8];                /* User login name */
+        char ut_id[4];                  /* /etc/inittab id(usually line #) */
+        char ut_line[12];               /* device name (console, lnxx) */
+        short ut_pid;                   /* short for compat. - process id */
+        short ut_type;                  /* type of entry */
+        struct exit_status ut_exit;     /* The exit status of a process */
+        time_t ut_time;                 /* time entry was made */
+};
+
+struct exit_status {
+        short e_termination;    /* Process termination status */
+        short e_exit;           /* Process exit status */
+};
+
+#define USER_PROCESS    7       /* A user process */
+#define DEAD_PROCESS    8
+
+utmpx.h
+-------
+
+struct utmpx {
+        char    ut_user[32];            /* user login name */
+        char    ut_id[4];               /* inittab id */
+        char    ut_line[32];            /* device name (console, lnxx) */
+        pid_t   ut_pid;                 /* process id */
+        short   ut_type;                /* type of entry */
+        struct exit_status ut_exit;     /* process termination/exit status */
+        struct timeval ut_tv;           /* time entry was made */
+        long    ut_session;             /* session ID, used for windowing */
+        long    pad[5];                 /* reserved for future use */
+        short   ut_syslen;              /* significant length of ut_host */
+        char    ut_host[257];           /* remote host name */
+};
+
+lastlog.h
+---------
+
+struct lastlog {
+        time_t  ll_time;
+        char    ll_line[8];
+        char    ll_host[16];            /* same as in utmp */
+};
+
+The info above is all the info needed for us to add/remove/modify
+entries in logs on UNIX systems. 
+
+x04\ Logging in
+--------------
+When a user logs in, a utmp/x structure gets filled with that users
+details (username,device,type of entry,logging time,host etc). Note
+that on Linux and SUN ut_type gets set to 7 (user process), and 
+that structure gets written to the end of the utmp/x and wtmp/x files. 
+Then lastlog structure gets filled up with users name, logging time 
+and host name, and this structure gets written in the lastlog file at
+position (UID * sizeof(struct lastlog)) where UID is a UID of a
+user who's lastlog entry gets modified.
+
+x05\ Logging out
+---------------
+When user logs out, utmp/x entry for that user gets modified to 
+show that user is not logged on anymore. On Linux and SUN 
+ut_type value is modified from 7 to 8 (dead process) and login
+time values gets changed to logout time. Same exit entry also
+gets written to wtmp/x file. So when you type "last -10" you see 
+info taken from wtmp/x file login time is pulled from login record 
+in wtmp/x and logout time is taken from exit entry that was maid 
+when user logged out.
+
+x06\ Fun stuff
+--------------
+a) Lets say you logged onto the server with username "john", entries for
+this login gets written into utmp/s and wtmp/x file and your lastlog
+entry for that user gets modified. You could write a tool to remove
+this entry out of utmp/x and wtmp/x files but remember to handle
+lastlog file correctly. Make sure that lastlog entry for user "john"
+gets changed to the details of the second entry of user "john" in wtmp/x 
+file before you remove the entry from utmp/x and wtmp/x files. In other 
+words, lastlog entry for a specific user must always have the same 
+details as the first entry for that user in wtmp/x file. And of course
+if there is only one login record for a specific user in wtmp/x file,
+then if you remove that user, lastlog entry for that user must be zeroed.
+
+b) Adding a new entry is very simple. All you have to do is fill the utmp
+struct and write that struct to the end of wtmp/x file (or utmp/x file
+if you want to make it look like user is currently logged in).
+
+c) Removing entry is just as simple. Open wtmp/x file and some temp file.
+Then read chunks of data sized sizeof(struct utmp/x) into a declared utmp 
+struct. If this struct doesn't contain the info of an entry that you want
+to remove, then write that struct into the opened temp file. When you find
+that entry that you want to remove, don't write it to temp file. Then just
+finish writing rest of entries into temp file. Then just overwrite the 
+original wtmp/x file with the temp file. For example this would remove
+all the usernames "john" out of wtmp file:
+
+---------------------------------[ CODE START ]---------------------------------
+void remove_john()
+{
+  struct utmp wtmp_record;
+  char name[]="john";
+  char command[]="mv /tmp/WTMP.TMP /var/log/wtmp ; chmod 644 /var/log/wtmp";
+  int fd1,fd2;
+  fd1=open("/var/log/wtmp",O_RDWR);
+  fd2=open("/tmp/WTMP.TMP",O_RDWR|O_CREAT);
+  lseek(fd1,0,SEEK_SET);
+  lseek(fd2,0,SEEK_SET);
+  while(read(fd1,(char *)&wtmp_record,sizeof(wtmp_record))==sizeof(wtmp_record))
+  {
+    if(!strcmp(wtmp_record.ut_name,name))
+    {
+      printf("Removed an entry of user john!");
+    }
+    else
+    {
+      write(fd2,(char *)&wtmp_record,sizeof(wtmp_record));
+    }
+  }
+  close(fd1);
+  close(fd1);
+  system(command);
+}
+----------------------------------[ CODE END ]----------------------------------
+
+d) To modify an entry in wtmp/x file, you would do exactly as above, but
+instead of not writing a matched entry, you would modify that entry as you
+with and then write it to temp file.
+
+e) Method to modify the lastlog file is the same. The only tricky part is to
+find a right place in a lastlog file. As I mentioned before, lastlog entry
+for a specific user is at the position (UID * sizeof(struct lastlog)) bytes
+from the beginning of the lastlog file. For example this code  finds a right 
+position in a lastlog file for a user "john":
+
+---------------------------------[ CODE START ]---------------------------------
+  struct passwd           *password;
+  int                      fd;
+  password=getpwnam("john")
+  fd=open("/var/log/lastlog",O_RDWR);
+  lseek(fd,(long)password->pw_uid*sizeof(struct lastlog),0);
+----------------------------------[ CODE END ]----------------------------------
+
+x07\ mig-logcleaner.tar.gz
+---------------------
+get it from http://www.greyhats.za.net
+or from http://hack.co.za/index.php?mode=browse&cat=373
+
+x08\ Conclusion
+---------------
+I hope all of this is clear. If i missed something out or made some mistakes,
+please mail me to no1@greyhats.za.net or msg at http://greyhats.za.net/guestbook/
+
+----------------------------------< M I G >----------------------------------< by no1
+                            |Security Development|
+

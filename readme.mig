@@ -1,0 +1,50 @@
+MIG logcleaner by no1 (greyhats.za.net)
+---------------------------------------
+
+This log cleaner removes logs from utmp, wtmp, utmpx, wtmpx, lastlog files.
+Also removes 2 specified text strings out of every file in a specified directory.
+Also lets you modify entries as you wish.
+Also lets you add new entries.
+
+Installation:
+-------------
+
+just type 'make'
+
+eg. make linux
+    make bsd
+    make sun
+
+Usage examples:
+---------------
+
+0x1\ ./mig-logcleaner -u john -d
+
+	removes first entry of user "john"
+	
+0x2\ ./mig-logcleaner -u john -n 5 -d
+
+	removes 5th entry of user "john"
+	
+0x3\ ./mig-logcleaner -u john -n 0 -d /var/.secret/ -a 1.2.3.4 -b greyhats.za.net -d
+
+	removed all entries of user "john" and removes strings "1.2.3.4" and 
+	"greyhats.za.net" out of all files in /var/.secret/ directory
+	
+0x4\ ./mig-logcleaner -a 1.2.3.4 -b greyhats.za.net -d
+
+	removes strings "1.2.3.4" and "greyhats.za.net" out of default log dir
+
+0x5\ ./mig-logcleaner -u john -n 2 -R -H china.gov
+
+	replaces hostname of second entry of user "john" to "china.gov"
+	
+0x6\ ./mig-logcleaner -u john -n 5 -A -U jane -T tty1 -H arb.com -I 12345334 -O 12345397
+	
+	adds new entry for user "jane" before 5th entry of user "john"
+	
+0x7\ ./mig-logcleaner -A -U jane -T tty1 -H arb.com -I 12345334 -O 12345397
+
+	adds new entry for user "jane" right on top of wtmp/x file
+
+-no1@MIG
